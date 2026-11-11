@@ -69,5 +69,6 @@ export default {
   transactionsRequireLogin: true,
   transactionsRequirePreflight: true,
   crs: {},
-  footerLinks: null
+  footerLinks: null,
+  localApi: null // { url, collectionsUrl }: answer that STAC API in the browser, see src/local-api
 };

@@ -204,6 +204,20 @@
         },
         "required": ["label", "url"]
       }
+    },
+    "localApi": {
+      "type": ["object", "null"],
+      "properties": {
+        "url": {
+          "type": "string",
+          "format": "uri"
+        },
+        "collectionsUrl": {
+          "type": "string",
+          "format": "uri"
+        }
+      },
+      "required": ["url", "collectionsUrl"]
     }
   }
 }

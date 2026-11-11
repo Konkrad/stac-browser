@@ -10,8 +10,10 @@ import { createBootstrap } from 'bootstrap-vue-next/plugins/createBootstrap';
 import { vBToggle } from 'bootstrap-vue-next/directives/BToggle';
 import visible from './directives/visible';
 import WidgetHook from "./plugins/WidgetHook.vue";
+import { installLocalApi } from "./local-api";
 
 export default function init() {
+  installLocalApi(CONFIG);
   return loadDefaultMessages().then(() => {
     // Setup router
     const router = createRouter({
