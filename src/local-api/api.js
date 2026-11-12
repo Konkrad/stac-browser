@@ -266,8 +266,9 @@ export default class LocalApi {
   }
 
   selectList(columns) {
-    // overviews: COGP's simplified geometries for map rendering, not item data
-    return columns.filter(([name]) => name !== 'overviews').map(([name, type]) => {
+    // overviews: COGP's simplified geometries for map rendering, not item data.
+    // cdse:*: the files' extras beyond CDSE's STAC items (raw OData record, ...), not shown.
+    return columns.filter(([name]) => name !== 'overviews' && !name.startsWith('cdse:')).map(([name, type]) => {
       const q = `"${name.replace(/"/g, '""')}"`;
       if (type.startsWith('TIMESTAMP')) { // ISO strings, as STAC wants
         return `strftime(CAST(${q} AS TIMESTAMP), '%Y-%m-%dT%H:%M:%S.%fZ') AS ${q}`;
