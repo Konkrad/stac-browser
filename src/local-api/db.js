@@ -15,6 +15,7 @@ export function getDb() {
       const worker = new Worker(workerUrl);
       const db = new duckdb.AsyncDuckDB(new duckdb.VoidLogger(), worker);
       await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
+      await db.open({ filesystem: { reliableHeadRequests: true, allowFullHTTPReads: false, forceFullHTTPReads: false } });
       URL.revokeObjectURL(workerUrl);
       return db;
     })();
