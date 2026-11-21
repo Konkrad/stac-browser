@@ -5,7 +5,7 @@
 // collections.json: { title, description, data_base, collections: [ <STAC
 // Collection without links> + "cdse:files": { "<folder>": ["YYYY-MM", ...] } ] }
 // -- which folders and months hold items of that collection.
-import { query, quote } from './db';
+import { file, query, quote } from './db';
 import { wkbToGeoJSON } from './wkb';
 
 const STAC_VERSION = '1.1.0';
@@ -93,7 +93,8 @@ export function parseParams(params = {}) {
 }
 
 function serializeParams(p) {
-  const q = { limit: String(p.limit), sortby: `${p.sort === 'asc' ? '+' : '-'}properties.datetime`, token: p.token };
+  const q = { limit: String(p.limit), sortby: `${p.sort === 'asc' ? '+' : '-'}properties.datetime` };
+  if (p.token) { q.token = p.token; }
   if (p.bbox) { q.bbox = p.bbox.join(','); }
   if (p.datetime[0] || p.datetime[1]) { q.datetime = `${p.datetime[0] || '..'}/${p.datetime[1] || '..'}`; }
   if (p.collections) { q.collections = p.collections.join(','); }
@@ -258,7 +259,9 @@ export default class LocalApi {
   /** Column names and types of a folder's files (from its newest month), to build the SELECT. */
   schema(cat, folder, url) {
     if (!this.schemas.has(folder)) {
-      const p = query(`DESCRIBE SELECT * FROM read_parquet(${quote(url)})`).then(rows => rows.map(r => [r.column_name, r.column_type]));
+      const p = file(url)
+        .then(name => query(`DESCRIBE SELECT * FROM read_parquet(${quote(name)})`))
+        .then(rows => rows.map(r => [r.column_name, r.column_type]));
       p.catch(() => this.schemas.delete(folder));
       this.schemas.set(folder, p);
     }
@@ -288,7 +291,10 @@ export default class LocalApi {
     const ascending = p.sort === 'asc';
     const months = this.months(cat, p.collections, p.datetime, p.ids, ascending);
     const base = cat.data_base.replace(/\/+$/, '');
-    let [monthIndex, skip] = p.token ? p.token.split(':').map(Number) : [0, 0];
+    // token: "<month index>:<skip>" where this page starts, then "~" and the
+    // token of the page before it (none for the first page), so prev needs no state.
+    const history = p.token ? p.token.split('~') : [];
+    let [monthIndex, skip] = history.length ? history[0].split(':').map(Number) : [0, 0];
     const features = [];
     let next = null;
 
@@ -298,8 +304,10 @@ export default class LocalApi {
       const entries = [...folders].map(([folder, colls]) => [folder, colls, `${base}/${folder}.parquet/${month}.parquet`]);
       // eslint-disable-next-line no-await-in-loop -- months are read one after another until the page is full
       const schemas = await Promise.all(entries.map(([folder, , url]) => this.schema(cat, folder, url)));
+      // eslint-disable-next-line no-await-in-loop -- see above
+      const names = await Promise.all(entries.map(([, , url]) => file(url)));
       const parts = [];
-      for (const [i, [, colls, url]] of entries.entries()) {
+      for (const [i, [, colls]] of entries.entries()) {
         const columns = schemas[i];
         const where = [`collection IN (${[...colls].map(quote).join(', ')})`];
         if (p.ids) { where.push(`id IN (${p.ids.map(quote).join(', ')})`); }
@@ -309,7 +317,7 @@ export default class LocalApi {
         }
         if (p.datetime[0]) { where.push(`datetime >= TIMESTAMPTZ ${quote(p.datetime[0])}`); }
         if (p.datetime[1]) { where.push(`datetime <= TIMESTAMPTZ ${quote(p.datetime[1])}`); }
-        parts.push(`SELECT ${this.selectList(columns)} FROM read_parquet(${quote(url)}) WHERE ${where.join(' AND ')}`);
+        parts.push(`SELECT ${this.selectList(columns)} FROM read_parquet(${quote(names[i])}) WHERE ${where.join(' AND ')}`);
       }
       const sql = `SELECT * FROM (${parts.join(' UNION ALL BY NAME ')})
         ORDER BY datetime ${ascending ? 'ASC' : 'DESC'}, id LIMIT ${need + 1} OFFSET ${skip}`;
@@ -333,9 +341,16 @@ export default class LocalApi {
     const links = [];
     if (path) {
       links.push(this.link('root', '/', JSON_TYPE));
+      const page = (rel, token) => {
+        const q = new URLSearchParams(serializeParams(Object.assign({}, p, { token })));
+        links.push(this.link(rel, `/${path}?${q}`, GEOJSON, { method: 'GET' }));
+      };
       if (next) {
-        const q = new URLSearchParams(serializeParams(Object.assign({}, p, { token: next })));
-        links.push(this.link('next', `/${path}?${q}`, GEOJSON, { method: 'GET' }));
+        page('next', p.token ? `${next}~${p.token}` : next);
+      }
+      if (p.token) {
+        page('prev', history.slice(1).join('~') || null);
+        page('first', null);
       }
     }
     return { type: 'FeatureCollection', features, links, numberReturned: features.length };

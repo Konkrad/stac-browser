@@ -3,6 +3,7 @@
 // Enabled with the config option `localApi: { url, collectionsUrl }`.
 import axios, { AxiosError, AxiosHeaders } from 'axios';
 import LocalApi from './api';
+import { warmUp } from './db';
 
 export function installLocalApi(config) {
   const options = config.localApi;
@@ -10,6 +11,7 @@ export function installLocalApi(config) {
     return null;
   }
   const api = new LocalApi(options);
+  warmUp();
   const network = axios.getAdapter(axios.defaults.adapter);
   const root = new URL(options.url.replace(/\/*$/, '/'));
 
